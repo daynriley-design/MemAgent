@@ -4,8 +4,9 @@
   "description": "Explicit, Git-friendly project memory for Claude Code and Codex",
   "type": "module",
   "bin": { "memagent": "./dist/index.js" },
-  "files": ["dist"],
-  "scripts": { "build": "tsup src/index.ts --format esm --clean" },
-  "dependencies": { "@memagent/core": "workspace:*", "commander": "^13.1.0" },
+  "files": ["dist", "README.md", "THIRD_PARTY_NOTICES.md"],
+  "repository": { "type": "git", "url": "git+https://github.com/daynriley-design/MemAgent.git", "directory": "packages/cli" },
+  "scripts": { "build": "tsup", "prepack": "pnpm --filter memagent... build" },
+  "devDependencies": { "@memagent/core": "workspace:*", "commander": "^13.1.0" },
   "engines": { "node": ">=22" }
 }

@@ -21,6 +21,27 @@ node /chemin/vers/MemAgent/packages/cli/dist/index.js init
 
 Vous pouvez aussi lier le paquet avec `pnpm --dir packages/cli link --global` depuis ce dépôt pour disposer de la commande `memagent`. Le nom npm reste à vérifier avant publication.
 
+## Installer une archive autonome
+
+Le CLI contient le cœur et Commander dans son fichier compilé. Il n'a aucune dépendance d'exécution à télécharger et ne nécessite pas de publier `@memagent/core`.
+
+Depuis le dépôt :
+
+```sh
+pnpm pack:cli
+pnpm test:package
+```
+
+`pack:cli` reconstruit les sources et crée `artifacts/memagent-0.1.0.tgz`. `test:package` installe cette archive hors ligne dans un dossier temporaire hors du monorepo, vérifie la commande installée et teste les deux agents avec des profils isolés. Aucune authentification ni requête à un modèle n'est nécessaire. Les dossiers temporaires sont conservés pour diagnostic.
+
+Pour rendre la commande disponible dans vos autres projets :
+
+```sh
+pnpm add --global /chemin/vers/MemAgent/artifacts/memagent-0.1.0.tgz
+```
+
+Cette installation utilise une archive locale : rien n'est publié sur npm. Le choix de licence et les droits du compte npm restent à régler avant publication. Les notices des dépendances intégrées sont incluses dans l'archive.
+
 ```sh
 memagent init
 memagent add rule "Utilise pnpm, jamais npm"
@@ -81,7 +102,7 @@ La hiérarchie souhaitée est privée-projet > partagée-projet > globale. Elle 
 
 Le chargement effectif et le comportement des modèles nécessitent les agents installés et authentifiés. Les tests automatisés couvrent le stockage, le routage des deux cibles, la composition des overrides Codex, l'expiration, la préservation des fichiers et le CLI avec une commande enfant locale.
 
-Le workflow GitHub Actions compile, vérifie les types et exécute les tests sous Linux et Windows avec Node.js 22 et 24. Les tests de protection du suivi nécessitent Git. Exécutez `pnpm build` avant `pnpm test` : les tests CLI utilisent le binaire compilé.
+Le workflow GitHub Actions compile, vérifie les types, exécute les tests puis installe l'archive autonome hors ligne sous Linux et Windows avec Node.js 22 et 24. Les tests de protection du suivi nécessitent Git. Exécutez `pnpm build` avant `pnpm test` : les tests CLI utilisent le binaire compilé.
 
 Test d'acceptation facultatif avec un Codex CLI installé et authentifié : `pnpm test:codex:live` après compilation. Il appelle réellement le modèle via votre compte, dans un projet temporaire en lecture seule, et vérifie les marqueurs partagés, privés et expirés sans utilisation d'outils. Il ne modifie pas vos fichiers de mémoire personnels et conserve les résultats temporaires pour diagnostic. Il ne s'exécute pas dans la CI.
 
