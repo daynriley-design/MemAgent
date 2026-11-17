@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 
 export type Kind = 'rule' | 'decision' | 'note';
 export type Scope = 'project' | 'private' | 'global';
+export type Agent = 'claude' | 'codex';
 export interface Entry {
   id: string;
   type: Kind;
@@ -14,7 +15,7 @@ export interface Entry {
   expires_at: string | null;
   text: string;
 }
-export interface Context { root: string; home: string; claudeDir: string; globalDir: string }
+export interface Context { root: string; home: string; claudeDir: string; codexDir: string; globalDir: string; agents?: Agent[] }
 const kinds: Kind[] = ['rule', 'decision', 'note'];
 const titles = { rule: 'Rules', decision: 'Decisions', note: 'Notes' };
 export const START = '<!-- memagent:start (généré, ne pas éditer à la main) -->';
@@ -23,15 +24,32 @@ export function context(root = process.cwd(), home = homedir()): Context {
   return {
     root: resolve(root), home,
     claudeDir: process.env.CLAUDE_CONFIG_DIR || join(home, '.claude'),
+    codexDir: process.env.CODEX_HOME || join(home, '.codex'),
     globalDir: join(home, '.config', 'memagent'),
   };
 }
-export async function findRoot(start = process.cwd()): Promise<string> {
+export async function configuredAgents(c: Context): Promise<Agent[]> {
+  if (c.agents) return validateAgents(c.agents);
+  const config = await readOptional(join(c.root, '.memagent', 'config.json'));
+  // Existing Claude-only projects keep their behavior until explicitly enabled.
+  if (config === null) return ['claude'];
+  return validateAgents(JSON.parse(config).agents);
+}
+function validateAgents(agents: unknown): Agent[] {
+  if (!Array.isArray(agents) || !agents.length || agents.some(a => a !== 'claude' && a !== 'codex')) {
+    throw new Error('Configuration agents invalide : liste non vide de claude et/ou codex attendue.');
+  }
+  return [...new Set(agents)] as Agent[];
+}
+export async function findRoot(start = process.cwd(), required = true): Promise<string> {
   let dir = resolve(start);
   for (;;) {
     if (await readOptional(join(dir, '.memagent', 'memory.md')) !== null) return dir;
     const parent = dirname(dir);
-    if (parent === dir) throw new Error('Projet non initialisé. Lancez memagent init à sa racine.');
+    if (parent === dir) {
+      if (!required) return resolve(start);
+      throw new Error('Projet non initialisé. Lancez memagent init à sa racine.');
+    }
     dir = parent;
   }
 }
@@ -110,8 +128,10 @@ export function spliceBlock(content: string, block: string): string {
 }
 type Planned = { path: string; before: string | null; after: string };
 const exec = promisify(execFile);
-const privatePaths = ['.memagent/memory.local.md', 'CLAUDE.local.md'];
-async function planPrivacy(c: Context): Promise<Planned> {
+async function planPrivacy(c: Context, agents: Agent[]): Promise<Planned> {
+  const privatePaths = ['.memagent/memory.local.md',
+    ...(agents.includes('claude') ? ['CLAUDE.local.md'] : []),
+    ...(agents.includes('codex') ? ['AGENTS.override.md'] : [])];
   try {
     const { stdout } = await exec('git', ['-C', c.root, 'ls-files', '-z', '--', ...privatePaths], {
       env: { ...process.env, LC_ALL: 'C' },
@@ -133,14 +153,43 @@ async function planPrivacy(c: Context): Promise<Planned> {
   return { path, before, after };
 }
 async function planSync(c: Context, overrides = new Map<Scope, Entry[]>(), now = new Date(), globalOnly = false): Promise<Planned[]> {
+  const agents = await configuredAgents(c);
   const scopes: Scope[] = globalOnly ? ['global'] : ['project', 'private', 'global'];
-  const plans = await Promise.all(scopes.map(async scope => {
-    const entries = overrides.get(scope) ?? await load(c, scope);
+  const entries = new Map(await Promise.all(scopes.map(async scope =>
+    [scope, overrides.get(scope) ?? await load(c, scope)] as const)));
+  const plans: Planned[] = [];
+  if (agents.includes('claude')) plans.push(...await Promise.all(scopes.map(async scope => {
     const path = scope === 'global' ? join(c.claudeDir, 'CLAUDE.md') : join(c.root, scope === 'private' ? 'CLAUDE.local.md' : 'CLAUDE.md');
     const before = await readOptional(path);
-    return { path, before, after: spliceBlock(before ?? '', renderBlock(entries, scope, now)) };
-  }));
-  return globalOnly ? plans : [await planPrivacy(c), ...plans];
+    return { path, before, after: spliceBlock(before ?? '', renderBlock(entries.get(scope)!, scope, now)) };
+  })));
+  if (agents.includes('codex')) plans.push(...await planCodex(c, entries, now, globalOnly));
+  return globalOnly ? plans : [await planPrivacy(c, agents), ...plans];
+}
+async function planCodex(c: Context, entries: Map<Scope, Entry[]>, now: Date, globalOnly: boolean): Promise<Planned[]> {
+  const globalOverride = join(c.codexDir, 'AGENTS.override.md');
+  const overrideBefore = await readOptional(globalOverride);
+  const globalPath = overrideBefore !== null ? globalOverride : join(c.codexDir, 'AGENTS.md');
+  const globalBefore = overrideBefore ?? await readOptional(globalPath);
+  const plans: Planned[] = [{ path: globalPath, before: globalBefore,
+    after: spliceBlock(globalBefore ?? '', renderBlock(entries.get('global')!, 'global', now)) }];
+  if (globalOnly) return plans;
+  const sharedPath = join(c.root, 'AGENTS.md');
+  const sharedBefore = await readOptional(sharedPath);
+  const sharedAfter = spliceBlock(sharedBefore ?? '', renderBlock(entries.get('project')!, 'project', now));
+  plans.push({ path: sharedPath, before: sharedBefore, after: sharedAfter });
+  const privatePath = join(c.root, 'AGENTS.override.md');
+  const privateBefore = await readOptional(privatePath);
+  const privateEntries = entries.get('private')!;
+  // An override replaces AGENTS.md at this directory. Include all shared guidance
+  // inside the managed block so manual team instructions remain available too.
+  if (privateBefore !== null || privateEntries.some(e => !expired(e, now))) {
+    const sharedBody = sharedAfter.replace(START, '').replace(END, '').trim();
+    const privateBody = renderBlock(privateEntries, 'private', now).slice(START.length, -END.length).trim();
+    const combined = [START, '# MemAgent — Codex project context', sharedBody, privateBody, END].join('\n\n');
+    plans.push({ path: privatePath, before: privateBefore, after: spliceBlock(privateBefore ?? '', combined) });
+  }
+  return plans;
 }
 async function commit(plans: Planned[]): Promise<void> {
   for (const p of plans) if (p.before !== p.after) await atomicWrite(p.path, p.after);
@@ -148,13 +197,21 @@ async function commit(plans: Planned[]): Promise<void> {
 export async function sync(c: Context, globalOnly = false, now = new Date()): Promise<void> {
   await commit(await planSync(c, new Map(), now, globalOnly));
 }
-export async function init(c: Context): Promise<void> {
+export async function init(c: Context, agents?: Agent[]): Promise<void> {
+  const selected = agents ? validateAgents(agents) : await configuredAgents(c);
+  c = { ...c, agents: selected };
   const path = source(c, 'project');
   const before = await readOptional(path);
   if (before !== null) parse(before);
   // Validate all destinations before creating or modifying files.
   const plans = await planSync(c);
-  await commit([plans[0], { path, before, after: before ?? serialize([]) }, ...plans.slice(1)]);
+  const configPath = join(c.root, '.memagent', 'config.json');
+  const configBefore = await readOptional(configPath);
+  // Keep unrelated configuration keys when changing targets.
+  const config = configBefore === null ? {} : JSON.parse(configBefore);
+  const configAfter = JSON.stringify({ ...config, agents: selected }, null, 2) + '\n';
+  await commit([plans[0], { path, before, after: before ?? serialize([]) },
+    { path: configPath, before: configBefore, after: configAfter }, ...plans.slice(1)]);
 }
 export function ttlExpiry(ttl: string, now: Date): string | null {
   if (ttl === 'never') return null;

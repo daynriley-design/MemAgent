@@ -16,7 +16,7 @@ beforeEach(async () => {
   const home = join(dir, 'home');
   await mkdir(root);
   await mkdir(home);
-  env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: join(home, '.claude') };
+  env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: join(home, '.claude'), CODEX_HOME: join(home, '.codex') };
 });
 afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 const run = (...args: string[]) => exec(process.execPath, [cli, ...args], { cwd: root, env });
@@ -29,8 +29,14 @@ it('exercises init, add, list, remove and sync through the compiled CLI', async 
   await run('add', 'note', 'Private task', '--private', '--ttl', 'never');
   expect((await run('list', '--private')).stdout).toContain('Private task');
   expect(await readFile(join(root, 'CLAUDE.md'), 'utf8')).not.toContain('Private task');
+  expect(await readFile(join(root, 'AGENTS.md'), 'utf8')).toContain('Use pnpm');
+  expect(await readFile(join(root, 'AGENTS.md'), 'utf8')).not.toContain('Private task');
+  const override = await readFile(join(root, 'AGENTS.override.md'), 'utf8');
+  expect(override).toContain('Use pnpm');
+  expect(override).toContain('Private task');
   await run('remove', id);
   expect((await run('list')).stdout).not.toContain('Use pnpm');
+  expect(await readFile(join(root, 'AGENTS.override.md'), 'utf8')).not.toContain('Use pnpm');
   await run('sync');
 });
 
@@ -70,4 +76,39 @@ it('never launches a child when sync fails', async () => {
   await writeFile(child, "require('node:fs').writeFileSync('launched.txt','yes');");
   await expect(run('run', '--', process.execPath, child)).rejects.toThrow('mal formés');
   await expect(readFile(join(root, 'launched.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('supports Codex-only initialization and global sync outside a project', async () => {
+  await run('init', '--agent', 'codex');
+  await run('init');
+  expect(JSON.parse(await readFile(join(root, '.memagent', 'config.json'), 'utf8')).agents).toEqual(['codex']);
+  await run('add', 'rule', 'Use Codex');
+  expect(await readFile(join(root, 'AGENTS.md'), 'utf8')).toContain('Use Codex');
+  await expect(readFile(join(root, 'CLAUDE.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  await run('add', 'rule', 'Global Codex preference', '--global', '--agent', 'codex');
+  expect(await readFile(join(env.CODEX_HOME!, 'AGENTS.md'), 'utf8')).toContain('Global Codex preference');
+  await expect(run('sync', '--agent', 'invalid')).rejects.toThrow('invalid');
+});
+
+it('selects Codex while preserving custom executable arguments and their exit code', async () => {
+  await run('init', '--agent', 'claude');
+  await run('add', 'rule', 'Shared across agents');
+  const child = join(dir, 'check-codex.cjs');
+  await writeFile(child, "const fs=require('node:fs');if(!fs.readFileSync('AGENTS.md','utf8').includes('Shared across agents'))process.exit(9);console.log(process.argv[2]);process.exit(6);");
+  try {
+    await run('run', '--agent', 'codex', '--', process.execPath, child, '--literal');
+    throw new Error('Expected child exit code');
+  } catch (error) {
+    expect((error as { code: number }).code).toBe(6);
+    expect((error as { stdout: string }).stdout).toContain('--literal');
+  }
+});
+
+it('uses the configured targets for global changes from a project subdirectory', async () => {
+  await run('init', '--agent', 'codex');
+  const nested = join(root, 'apps', 'api');
+  await mkdir(nested, { recursive: true });
+  await exec(process.execPath, [cli, 'add', 'rule', 'Global from nested directory', '--global'], { cwd: nested, env });
+  expect(await readFile(join(env.CODEX_HOME!, 'AGENTS.md'), 'utf8')).toContain('Global from nested directory');
+  await expect(readFile(join(env.CLAUDE_CONFIG_DIR!, 'CLAUDE.md'))).rejects.toMatchObject({ code: 'ENOENT' });
 });

@@ -13,6 +13,7 @@ beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'memagent-test-'));
   c = context(join(sandbox, 'project'), join(sandbox, 'home'));
   c.claudeDir = join(sandbox, 'home', '.claude');
+  c.codexDir = join(sandbox, 'home', '.codex');
   await mkdir(c.root, { recursive: true });
 });
 afterEach(async () => { await rm(sandbox, { recursive: true, force: true }); });
@@ -126,5 +127,83 @@ describe('safe block replacement', () => {
   it('validates TTL values', () => {
     expect(ttlExpiry('14d', new Date('2026-11-01T00:00:00Z'))).toBe('2026-11-15T00:00:00.000Z');
     for (const invalid of ['0d', '-1d', 'tomorrow', '1h']) expect(() => ttlExpiry(invalid, new Date())).toThrow('TTL');
+  });
+});
+
+describe('Codex target', () => {
+  it('keeps public, private and global entries separated and includes manual shared guidance in the override', async () => {
+    await writeFile(join(c.root, 'AGENTS.md'), '# Team guidance\nKeep API compatibility.\n');
+    await init(c, ['claude', 'codex']);
+    await expect(readFile(join(c.root, 'AGENTS.override.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await add(c, 'rule', 'Use pnpm');
+    await add(c, 'rule', 'Private preference', 'private');
+    await add(c, 'rule', 'Global preference', 'global');
+    const shared = await readFile(join(c.root, 'AGENTS.md'), 'utf8');
+    const personal = await readFile(join(c.root, 'AGENTS.override.md'), 'utf8');
+    expect(shared).toContain('Use pnpm');
+    expect(shared).not.toContain('Private preference');
+    expect(shared).not.toContain('Global preference');
+    expect(personal).toContain('Keep API compatibility.');
+    expect(personal).toContain('Use pnpm');
+    expect(personal).toContain('Private preference');
+    expect(personal.indexOf('Use pnpm')).toBeLessThan(personal.indexOf('Private preference'));
+    expect(await readFile(join(c.codexDir, 'AGENTS.md'), 'utf8')).toContain('Global preference');
+    expect(await readFile(join(c.codexDir, 'AGENTS.md'), 'utf8')).not.toContain('Private preference');
+    await sync(c);
+    expect(await readFile(join(c.root, 'AGENTS.override.md'), 'utf8')).toBe(personal);
+  });
+  it('preserves existing local and global overrides, updating the file Codex actually loads', async () => {
+    await mkdir(c.codexDir, { recursive: true });
+    await writeFile(join(c.codexDir, 'AGENTS.override.md'), '# Global override\nMy existing preference.\n');
+    await writeFile(join(c.root, 'AGENTS.override.md'), '# Local override\nMy local preference.\n');
+    await init(c, ['codex']);
+    await add(c, 'rule', 'Shared instruction');
+    await add(c, 'rule', 'Personal global instruction', 'global');
+    const local = await readFile(join(c.root, 'AGENTS.override.md'), 'utf8');
+    expect(local.startsWith('# Local override\nMy local preference.\n')).toBe(true);
+    expect(local).toContain('Shared instruction');
+    const global = await readFile(join(c.codexDir, 'AGENTS.override.md'), 'utf8');
+    expect(global.startsWith('# Global override\nMy existing preference.\n')).toBe(true);
+    expect(global).toContain('Personal global instruction');
+    await expect(readFile(join(c.codexDir, 'AGENTS.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+  it('refreshes the shared snapshot and removes expired private notes without deleting manual text', async () => {
+    await init(c, ['codex']);
+    const now = new Date('2026-11-17T12:00:00Z');
+    await add(c, 'note', 'Private temporary task', 'private', '7d', now);
+    await writeFile(join(c.root, 'AGENTS.md'), '# Updated team instructions\n');
+    await sync(c, false, new Date('2026-11-25T12:00:00Z'));
+    const override = await readFile(join(c.root, 'AGENTS.override.md'), 'utf8');
+    expect(override).toContain('Updated team instructions');
+    expect(override).not.toContain('Private temporary task');
+    expect((await load(c, 'private'))[0].text).toBe('Private temporary task');
+  });
+  it('refuses tracked private overrides before changing either agent or any source', async () => {
+    await init(c, ['claude', 'codex']);
+    await add(c, 'rule', 'Private entry', 'private');
+    await exec('git', ['init', c.root]);
+    await exec('git', ['-C', c.root, 'add', '-f', 'AGENTS.override.md']);
+    const before = await readFile(join(c.root, 'CLAUDE.md'), 'utf8');
+    await expect(add(c, 'rule', 'Rejected shared entry')).rejects.toThrow('déjà suivi');
+    expect(await readFile(join(c.root, 'CLAUDE.md'), 'utf8')).toBe(before);
+    expect(await load(c, 'project')).toEqual([]);
+  });
+  it('validates both targets before changing sources when Codex markers are malformed', async () => {
+    await init(c, ['claude', 'codex']);
+    const before = await readFile(join(c.root, 'CLAUDE.md'), 'utf8');
+    await writeFile(join(c.root, 'AGENTS.override.md'), START);
+    await expect(add(c, 'rule', 'Rejected')).rejects.toThrow('mal formés');
+    expect(await load(c, 'project')).toEqual([]);
+    expect(await readFile(join(c.root, 'CLAUDE.md'), 'utf8')).toBe(before);
+  });
+  it('keeps project-private data isolated between projects', async () => {
+    await init(c, ['codex']);
+    await add(c, 'rule', 'Project A private', 'private');
+    const other = { ...c, root: join(sandbox, 'other') };
+    await mkdir(other.root);
+    await init(other, ['codex']);
+    await add(other, 'rule', 'Project B private', 'private');
+    expect(await readFile(join(other.root, 'AGENTS.override.md'), 'utf8')).not.toContain('Project A private');
+    expect(await readFile(join(c.root, 'AGENTS.override.md'), 'utf8')).not.toContain('Project B private');
   });
 });

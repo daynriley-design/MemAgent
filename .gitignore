@@ -3,3 +3,4 @@ dist/
 coverage/
 .memagent/memory.local.md
 CLAUDE.local.md
+AGENTS.override.md
