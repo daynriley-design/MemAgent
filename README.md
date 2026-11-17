@@ -83,6 +83,8 @@ Le chargement effectif et le comportement des modèles nécessitent les agents i
 
 Le workflow GitHub Actions compile, vérifie les types et exécute les tests sous Linux et Windows avec Node.js 22 et 24. Les tests de protection du suivi nécessitent Git. Exécutez `pnpm build` avant `pnpm test` : les tests CLI utilisent le binaire compilé.
 
+Test d'acceptation facultatif avec un Codex CLI installé et authentifié : `pnpm test:codex:live` après compilation. Il appelle réellement le modèle via votre compte, dans un projet temporaire en lecture seule, et vérifie les marqueurs partagés, privés et expirés sans utilisation d'outils. Il ne modifie pas vos fichiers de mémoire personnels et conserve les résultats temporaires pour diagnostic. Il ne s'exécute pas dans la CI.
+
 ## Limites de cette version
 
 Pas de MCP, de hook de démarrage, d'export Cursor/Aider, de SQLite, de recherche sémantique ni de synchronisation cloud. Pas de verrou entre processus : lancez une seule mutation MemAgent à la fois. Chaque écriture est atomique, mais la mise à jour de plusieurs fichiers n'est pas une transaction : après une panne disque ou interruption, relancez `memagent sync`.

@@ -6,6 +6,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "vitest run",
+    "test:codex:live": "node scripts/test-codex-live.mjs",
     "check": "tsc --noEmit",
     "memagent": "node packages/cli/dist/index.js"
   },
