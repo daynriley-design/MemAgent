@@ -1,0 +1,5 @@
+node_modules/
+dist/
+coverage/
+.memagent/memory.local.md
+CLAUDE.local.md

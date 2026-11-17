@@ -1,0 +1,11 @@
+{
+  "name": "memagent",
+  "version": "0.1.0",
+  "description": "Explicit, Git-friendly project memory for Claude Code",
+  "type": "module",
+  "bin": { "memagent": "./dist/index.js" },
+  "files": ["dist"],
+  "scripts": { "build": "tsup src/index.ts --format esm --clean" },
+  "dependencies": { "@memagent/core": "workspace:*", "commander": "^13.1.0" },
+  "engines": { "node": ">=22" }
+}
