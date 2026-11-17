@@ -131,6 +131,14 @@ describe('safe block replacement', () => {
 });
 
 describe('Codex target', () => {
+  it('does not grow gitignore when alternating between configured and individual targets', async () => {
+    await init(c, ['claude', 'codex']);
+    const before = await readFile(join(c.root, '.gitignore'), 'utf8');
+    await sync({ ...c, agents: ['codex'] });
+    await sync({ ...c, agents: ['claude'] });
+    await sync(c);
+    expect(await readFile(join(c.root, '.gitignore'), 'utf8')).toBe(before);
+  });
   it('keeps public, private and global entries separated and includes manual shared guidance in the override', async () => {
     await writeFile(join(c.root, 'AGENTS.md'), '# Team guidance\nKeep API compatibility.\n');
     await init(c, ['claude', 'codex']);

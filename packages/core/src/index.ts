@@ -147,9 +147,15 @@ async function planPrivacy(c: Context, agents: Agent[]): Promise<Planned> {
   const path = join(c.root, '.gitignore');
   const before = await readOptional(path);
   const content = before ?? '';
-  const suffix = privatePaths.map(p => `/${p}\n`).join('');
-  // Append after existing negations, preserving every existing byte.
-  const after = content.endsWith(suffix) ? content : content + (content && !content.endsWith('\n') ? '\n' : '') + suffix;
+  const lines = content.split(/\r?\n/);
+  let lastNegation = -1;
+  for (const [index, line] of lines.entries()) if (line.startsWith('!')) lastNegation = index;
+  const missing = privatePaths.filter(p =>
+    Math.max(lines.lastIndexOf(`/${p}`), lines.lastIndexOf(p)) <= lastNegation);
+  // Keep existing exclusions even when switching targets; append only missing
+  // ones or ones superseded by a later negation, preserving existing bytes.
+  const suffix = missing.map(p => `/${p}\n`).join('');
+  const after = suffix ? content + (content && !content.endsWith('\n') ? '\n' : '') + suffix : content;
   return { path, before, after };
 }
 async function planSync(c: Context, overrides = new Map<Scope, Entry[]>(), now = new Date(), globalOnly = false): Promise<Planned[]> {
