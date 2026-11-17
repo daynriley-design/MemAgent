@@ -2,7 +2,7 @@
 
 Une mémoire Markdown commune à Claude Code et Codex : consignes, décisions et notes de session, conservées avec votre projet.
 
-Version de développement. La publication npm et le choix de licence du projet restent à finaliser. Cette archive contient le CLI complet, sans dépendance d'exécution à installer séparément. Node.js 22+ requis.
+Version de développement sous licence MIT. La publication npm reste à finaliser. Cette archive contient le CLI complet, sans dépendance d'exécution à installer séparément. Node.js 22+ requis.
 
 ## Installer une archive locale
 

@@ -1,7 +1,7 @@
 # Third-party notices
 
 The CLI bundle includes Commander.js 13.1.0. Its license is reproduced below.
-This notice does not set a license for MemAgent itself.
+MemAgent itself is licensed under the MIT License in the accompanying LICENSE file.
 
 ## Commander.js — MIT License
 

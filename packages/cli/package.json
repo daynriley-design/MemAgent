@@ -1,10 +1,11 @@
 {
   "name": "memagent",
   "version": "0.1.0",
+  "license": "MIT",
   "description": "Explicit, Git-friendly project memory for Claude Code and Codex",
   "type": "module",
   "bin": { "memagent": "./dist/index.js" },
-  "files": ["dist", "README.md", "THIRD_PARTY_NOTICES.md"],
+  "files": ["dist", "LICENSE", "README.md", "THIRD_PARTY_NOTICES.md"],
   "repository": { "type": "git", "url": "git+https://github.com/daynriley-design/MemAgent.git", "directory": "packages/cli" },
   "scripts": { "build": "tsup", "prepack": "pnpm --filter memagent... build" },
   "devDependencies": { "@memagent/core": "workspace:*", "commander": "^13.1.0" },

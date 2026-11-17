@@ -40,7 +40,7 @@ Pour rendre la commande disponible dans vos autres projets :
 pnpm add --global /chemin/vers/MemAgent/artifacts/memagent-0.1.0.tgz
 ```
 
-Cette installation utilise une archive locale : rien n'est publié sur npm. Le choix de licence et les droits du compte npm restent à régler avant publication. Les notices des dépendances intégrées sont incluses dans l'archive.
+Cette installation utilise une archive locale : rien n'est publié sur npm. Les droits du compte npm restent à vérifier avant publication. La licence MIT et les notices des dépendances intégrées sont incluses dans l'archive.
 
 ```sh
 memagent init
@@ -110,4 +110,8 @@ Test d'acceptation facultatif avec un Codex CLI installé et authentifié : `pnp
 
 Pas de MCP, de hook de démarrage, d'export Cursor/Aider, de SQLite, de recherche sémantique ni de synchronisation cloud. Pas de verrou entre processus : lancez une seule mutation MemAgent à la fois. Chaque écriture est atomique, mais la mise à jour de plusieurs fichiers n'est pas une transaction : après une panne disque ou interruption, relancez `memagent sync`.
 
-L'initialisation et la synchronisation peuvent créer ou modifier le bloc global dans votre dossier utilisateur. Les tests utilisent exclusivement des dossiers temporaires. Le projet n'a pas encore de licence choisie ; une publication publique devra régler ce point.
+L'initialisation et la synchronisation peuvent créer ou modifier le bloc global dans votre dossier utilisateur. Les tests utilisent exclusivement des dossiers temporaires.
+
+## Licence
+
+MemAgent est distribué sous [licence MIT](LICENSE). Les notices des dépendances intégrées au CLI sont conservées dans `packages/cli/THIRD_PARTY_NOTICES.md`.
